@@ -9,3 +9,14 @@ android/captures/
 *.iml
 .idea/
 .DS_Store
+
+# Engine modules — build outputs
+android/Bcore/build/
+android/Bcore/.cxx/
+android/black-reflection/build/
+android/compiler/build/
+
+# Engine reference notes we don't need
+android/README.md
+android/Docs.md
+android/RELEASE_NOTES.md

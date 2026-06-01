@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg_dark">#0B1320</color>
-    <color name="bg_panel">#151E2E</color>
-    <color name="ink">#E7ECF3</color>
-    <color name="ink_muted">#8AA0BD</color>
-    <color name="accent_sky">#4DB8FF</color>
-    <color name="accent_shard">#7AE0A1</color>
-    <color name="line">#22304A</color>
+    <color name="primary">#1B6FE0</color>
+    <color name="primary_dark">#0B1320</color>
+    <color name="primary_light">#4DB8FF</color>
+    <color name="accent">#7AE0A1</color>
+    <color name="primary_text">#0E2336</color>
+    <color name="secondary_text">#5D7591</color>
+    <color name="white">#FFFFFFFF</color>
 </resources>

@@ -1,0 +1,23 @@
+SkyShard
+Copyright (c) 2026 american2day
+
+This product bundles the BlackBox Virtual Environment engine
+(https://github.com/ALEX5402/NewBlackbox), which is licensed under the
+Apache License, Version 2.0. The full text of that license is available
+at android/LICENSE inside this repository, and at:
+http://www.apache.org/licenses/LICENSE-2.0
+
+Upstream credits acknowledged by BlackBox include: VirtualApp, VirtualAPK,
+Dobby, xDL, BlackReflection, and FreeReflection.
+
+Modifications by SkyShard:
+- Re-branded the host UI module from "BlackBox" to "SkyShard" (app name,
+  launcher icon, application id, theme colors).
+- Pinned NDK to a locally installable version.
+- Replaced repository mirrors with google() / mavenCentral() / jitpack().
+- Replaced the signing configuration with the american2day shared release
+  key so SkyShard APKs sideload alongside other american2day apps.
+
+No engine source files were modified; the SkyShard repository contains
+the upstream Bcore, black-reflection, and compiler modules verbatim
+(see git history for any future deltas).

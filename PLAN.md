@@ -1,158 +1,137 @@
 # SkyShard — Project Plan
 
 SkyShard is a single-APK Android parallel-app launcher. Install it on a stock
-phone, point it at any app you already have, and SkyShard runs an isolated
-"shard" of that app — separate accounts, separate storage, separate notifications,
-no second SIM required. Nothing leaves the phone. There is no backend, no
-account system, no telemetry.
+phone, point it at any APK you have, and SkyShard runs that app inside an
+isolated "shard" — separate accounts, separate storage, separate notifications,
+no second SIM required. Multiple shards per app are supported. Nothing leaves
+the phone. There is no backend, no account system, no telemetry.
 
 This document is the long-form plan: how it works, why those choices, what
-ships in v0.1, and how we get to N-copy virtualization later.
+ships today, and where the project is going.
 
 ## 0. Hard constraints
 
-- **No server.** Not a soft preference. The APK runs entirely on-device. No
-  network permission in the manifest for v0.1.
+- **No server.** The APK runs entirely on-device. The host app declares
+  `QUERY_ALL_PACKAGES` (so it can see installed apps you might want to clone)
+  and storage access — nothing else. No phone-home.
 - **No tracking, no analytics, no accounts.** Period.
 - **Single, signed APK install** — sideload-friendly, no Play Store required.
-- **Stock Android.** No root, no custom ROM, no bootloader unlock.
-- **Open source.** MIT licensed. Anyone can fork, rebuild, audit.
+- **Stock Android.** No root required for the common case, no custom ROM, no
+  bootloader unlock. Root is recommended for the deepest compatibility with
+  Google-services-locked apps, but not required for the core sandbox.
+- **Open source.** MIT for the SkyShard host code. The vendored engine is
+  Apache 2.0 (see `NOTICE`).
 
-## 1. The two viable cloning strategies
+## 1. Architecture in one paragraph
 
-Every existing parallel-app product is one of these two engines, or a hybrid:
+SkyShard is two layers: a host UI written in Kotlin/Java, and an in-process
+**virtualization engine** that runs cloned apps inside the host's own process.
+When you tap "Add" on an installed app, the engine extracts that APK, parses
+its manifest, registers a virtual `PackageInfo` against its own private
+PackageManager, redirects every cloned-app file path under
+`/data/data/com.american2day.skyshard/shards/<shard-id>/`, and proxies Binder
+calls through a stub host activity so each cloned app sees a complete (but
+fake) Android environment. Result: each shard behaves like a separate device
+to the cloned app — separate login session, separate notifications, separate
+crash domain.
 
-### A. Work Profile (Android Managed Profile)
+## 2. Engine choice
 
-Uses Android's built-in `DevicePolicyManager` to create a separate work profile
-on the device. Apps installed *into* the work profile have their own data
-sandbox, their own notifications (with a briefcase badge), and the OS isolates
-their storage from the personal profile. Shelter and Island both work this way.
+Building a virtualization engine from scratch is months of work. Forking an
+abandoned one (asLody/VirtualApp 2017, VirtualXposed 2022) means inheriting
+Android-version drift the moment you ship. The pragmatic move is to vendor an
+**actively-maintained** Apache-licensed FOSS engine and treat it as our
+runtime.
 
-- **Pros:** 100% stable across Android versions. Backed by official API. No
-  hooking. No SELinux fights. Works on Android 5 through 15+. Banking apps are
-  more likely to tolerate it because they see a real Android profile, not a
-  sandbox.
-- **Cons:** **One** clone per app, max. The work profile is a singleton — you
-  can't have three WhatsAppes. Some OEMs disable or restrict it.
+SkyShard v0.1 vendors the **NewBlackbox** engine
+(<https://github.com/ALEX5402/NewBlackbox>), Apache 2.0, last updated 2025,
+explicit Android 14 and 15 support, with a public API
+(`BlackBoxCore`, `BActivityManager`, etc.) intended for embedding. The
+upstream credits — VirtualApp, VirtualAPK, Dobby, xDL, BlackReflection,
+FreeReflection — are the foundational projects this lineage rests on.
 
-### B. In-process virtualization (VirtualApp style)
+The host UI module (`:app`) is a re-branded fork of the engine's reference UI
+so we ship something working on day one rather than rewriting from scratch. The
+engine modules (`:Bcore`, `:black-reflection`, `:compiler`) are vendored
+verbatim.
 
-The host app loads the target app's APK inside its own process, intercepts
-Binder calls, and redirects file I/O to a per-shard subdirectory. asLody's
-VirtualApp, VirtualXposed, DroidPlugin all work this way.
+## 3. v0.1 — what ships now
 
-- **Pros:** Unlimited clones (N copies of WhatsApp). No special device setup.
-- **Cons:** Brittle. Every Android release breaks something. The public
-  VirtualApp repo froze in 2017; current forks lag behind Android by 1–2 major
-  versions. Doesn't pass Play Integrity on the cloned app. Hard for one
-  developer to maintain alone.
-
-### Why SkyShard does both, in order
-
-Strategy A ships **today** with a small, readable Java codebase. It covers
-the most common ask (two Instagrams, two WhatsApps) and is permanent — it does
-not bit-rot.
-
-Strategy B is the v1.x roadmap. We design v0.1 around a `ShardEngine`
-interface so the work-profile engine and a future sandbox engine swap in and
-out without rewriting the UI or storage layer.
-
-## 2. Architecture (v0.1 → v1.x)
-
-```
-+--------------------------------------------------------+
-|  UI layer (Activity, RecyclerView, settings)           |
-|  - Lists installed apps                                |
-|  - Shows current shards                                |
-|  - Triggers clone / freeze / wipe actions              |
-+--------------------------------------------------------+
-                       |   via
-                       v
-+--------------------------------------------------------+
-|  ShardEngine (interface)                               |
-|  - List<Shard> listShards()                            |
-|  - void createShard(AppInfo, ShardOptions)             |
-|  - void launchShard(Shard)                             |
-|  - void freezeShard(Shard) / unfreeze                  |
-|  - void wipeShard(Shard) / wipeAll                     |
-+-------------------+--------------+---------------------+
-                    |              |
-        WorkProfileShardEngine   SandboxShardEngine
-        (v0.1, ships now)        (v1.x, future)
-        Uses DevicePolicyManager Uses a forked / in-house
-        + DeviceAdminReceiver    virtualization runtime
-```
-
-### Modules
-
-- `MainActivity` — single-screen launcher. Top half: installed-app picker. Bottom half: existing shards.
-- `ShardEngine` — interface every engine implements.
-- `WorkProfileShardEngine` — v0.1 default engine. Provisions a managed profile if absent, enables apps in that profile.
-- `ShardAdminReceiver` — extends `DeviceAdminReceiver` — required by the platform for any DPC app.
-- `AppRepo` — wraps `PackageManager` to list user-installed apps with icons & labels.
-- `Prefs` — tiny `SharedPreferences` wrapper. No DB.
-
-No internet, no Firebase, no analytics SDK, no crash reporter. The APK should be < 2 MB.
-
-## 3. v0.1 feature list (ships in the first APK on `/skyshard/`)
-
-1. Launch screen lists all third-party (non-system) apps on the device.
-2. Tap an app → "Add to SkyShard space". First time, this triggers the OS
-   "set up work profile?" flow. After that, subsequent clones drop straight in.
-3. "Shards" tab lists every app already cloned into the SkyShard space, with a
-   one-tap launcher.
-4. "Wipe SkyShard space" in settings — removes the entire managed profile.
-5. About screen: version, build date, source URL on GitHub.
-6. No `INTERNET` permission. No `READ_EXTERNAL_STORAGE`. Manifest is minimal.
+- Multi-clone sandboxing: install any APK into SkyShard once, then add it as
+  many separate shards as you want. Each shard has its own data tree and login
+  state.
+- Side-by-side launcher. Installed apps on one screen, your shards on another.
+- Per-shard actions: launch, force-stop, clear data, uninstall, create home
+  screen shortcut.
+- Optional GMS environment for apps that hard-require Google Play Services
+  (driven by the engine's GMS Manager).
+- Optional Xposed-style hook layer (engine ships LSPosed-compatible support);
+  hidden behind an advanced toggle.
+- Optional fake-location overlay (engine has built-in GPS mocking).
+- App label, launcher icon, theme, applicationId, output filename, signing
+  config all carry the SkyShard brand. The cloned-app side is unaware of
+  SkyShard; it sees a normal Android environment.
 
 ## 4. v0.2 — quality of life
 
-- Per-shard freeze (`setApplicationHidden` via DPC): pause the shard without uninstalling.
-- Per-shard notification badge color so cloned-Instagram notifications visually differ from the original.
-- Disguise / hide SkyShard's own launcher icon (for users who don't want a SkyShard icon on their home screen).
-- Backup / restore: export the shard list (which apps are cloned, plus per-shard preferences) to a single JSON file.
+- First-run welcome flow that explains what a shard is and asks for the right
+  permissions in plain language.
+- Per-shard freeze (engine API `BlackBoxCore.suspendShard`).
+- Per-shard notification badge color, so cloned-Instagram notifications
+  visually differ from the original on the lock screen.
+- Disguise / hide the SkyShard launcher icon for users who want it offscreen.
+- JSON backup/restore: export the list of shards (which APK, per-shard
+  settings) to a single file.
 
-## 5. v1.0 — multi-copy via SandboxShardEngine
+## 5. v1.0 — depth and breadth
 
-This is the work that takes months. Outline only:
+- Test matrix: WhatsApp, Instagram, Telegram, Signal, Discord, three
+  representative banking apps. Each one explicitly listed as "supported,"
+  "limited," or "blocked by Play Integrity" inside the app, with a one-line
+  reason.
+- Updates to the underlying engine pulled in on a release cadence rather than
+  ad-hoc — we treat the vendored engine as a tracked dependency.
+- Optional second engine: Android's Work Profile, for users who prefer a
+  single OS-isolated clone over the in-process sandbox. The two engines coexist
+  behind a `ShardEngine` switch.
 
-- Fork a viable virtualization engine (candidates: `va-exposed`, `BlackDex` reader + custom IPC layer, or write Binder hooks from scratch using LSPlant/Pine).
-- Embed the engine as a JNI library inside SkyShard.
-- Loader: extract the target APK, parse manifest, register fake `PackageInfo` with the engine's virtual `PackageManager`.
-- I/O redirection: hook `open()`, `stat()`, content resolver calls — every file path the cloned app sees gets rewritten under `/data/data/com.american2day.skyshard/shards/<shard-id>/`.
-- Binder proxy: each cloned activity runs under a stub host activity (`P0`, `P1`, … pre-declared in our manifest). Same trick VirtualApp uses.
-- Test matrix: WhatsApp, Instagram, Telegram, Signal, three banking apps. Anything Play-Integrity-locked is explicitly out-of-scope and labeled as such in-app.
+## 6. Out of scope
 
-## 6. Build & release
+- Bypassing root checks, SafetyNet, Play Integrity, or DRM. Some banking and
+  streaming apps will refuse to run cloned, and we will not fight that —
+  they'll be labelled blocked inside the app.
+- iOS. iOS does not allow this category of app to exist at all.
+- Anything that requires payment, account creation, or a server.
 
-- Native Android (Java), Gradle 8.9, AGP 8.7, JDK 21, `compileSdk=35`, `minSdk=24`, `targetSdk=35`.
-- One signing key shared with the rest of the `american2day` apps so users can sideload alongside App 563 and Claw Image without OS warnings.
-- Output: `app-release.apk`, copied to `/var/www/html/skyshard/skyshard.apk` on `elite` after every build.
-- Versioned filename pattern: `skyshard-v<X.Y.Z>+<code>-<slug>.apk`, with a stable `skyshard.apk` symlink to the latest.
-- Stable URL: `http://10.0.0.103/skyshard/` (LAN), `http://100.82.34.43/skyshard/` (Tailscale).
+## 7. Build & release
 
-## 7. Why "SkyShard"
+- Native Android with Java + Kotlin host code, Gradle 8.13, AGP 8.13.2,
+  JDK 21, `compileSdk=35`, `minSdk=21`, `targetSdk=28` (intentionally low to
+  keep cloned apps out of strict-mode jail; the engine documents why).
+- NDK 28.2.13676358 is pinned in `Bcore/build.gradle` and
+  `app/build.gradle`. Native libraries are built for `arm64-v8a` and
+  `armeabi-v7a`.
+- One signing key shared with the rest of the `american2day` apps so users
+  can sideload alongside App 563 and Claw Image without OS warnings.
+- Output: `app/build/outputs/apk/release/SkyShard_<ver>_universal-release.apk`,
+  copied to `/var/www/html/skyshard/skyshard.apk` on `elite` by
+  `/root/deploy_skyshard_apk.sh`.
+- Versioned filename pattern: `skyshard-v<X.Y.Z>+<code>-<slug>.apk`, with a
+  stable `skyshard.apk` symlink always pointing at the latest.
+- Stable URL: `http://10.0.0.103/skyshard/` (LAN), `http://100.82.34.43/skyshard/`
+  (Tailscale).
+
+## 8. Why "SkyShard"
 
 Each cloned instance is a shard — a small, isolated piece of the original app
 with its own memory and identity, sharing the device but not the data. The
-`sky-` prefix lines up with the existing `/skypoint/` workspace on this server
-and keeps the naming consistent without colliding with any known Android cloner
-on the Play Store or in the FOSS world.
+`sky-` prefix lines up with the existing `skypoint/` workspace on this
+server and keeps the naming consistent without colliding with any known
+parallel-app product on the Play Store or in the FOSS world.
 
-## 8. Out of scope (intentionally)
+## 9. Licensing
 
-- Bypassing root checks, SafetyNet, Play Integrity, or DRM. Not a goal.
-- Anything that requires payment, account creation, or a server.
-- A web UI. Browsers are not a parallel-app surface.
-- iOS. iOS does not allow this category of app to exist at all.
-
-## 9. Milestones
-
-| Version | Engine                 | Capability                                     |
-|---------|------------------------|------------------------------------------------|
-| 0.1     | WorkProfileShardEngine | One clone per app via work profile, wipe all   |
-| 0.2     | WorkProfileShardEngine | Freeze, hide launcher icon, JSON backup        |
-| 0.3     | WorkProfileShardEngine | Per-shard preferences, badge color, polish     |
-| 1.0     | SandboxShardEngine     | Unlimited clones for the curated test matrix   |
-| 1.x     | SandboxShardEngine     | Expand the supported app matrix, Android N+1   |
+The host UI code SkyShard authors is MIT licensed. The vendored engine
+(`Bcore`, `black-reflection`, `compiler`) is Apache 2.0. `NOTICE` at the
+repo root explains the bundling and lists the upstream credits the engine
+itself acknowledges.

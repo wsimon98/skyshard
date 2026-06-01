@@ -1,86 +1,116 @@
 # Architecture notes
 
-This is a deeper companion to `PLAN.md`. The plan covers what we ship and why;
-this file covers how the code is laid out and what to expect when reading it.
+Companion to `PLAN.md`. The plan covers what we ship and why; this file
+covers how the code is laid out and what to expect when reading it.
 
-## Layering
+## Module map
 
 ```
-+------------------ MainActivity ---------------------+
-| - Wires UI to ShardEngine via two RecyclerViews     |
-| - Owns the provisioning request flow                |
-+--------------------------+--------------------------+
-                           |
-+--------------------------v--------------------------+
-| ShardEngine (interface)                             |
-|   listShards / createShard / launchShard / wipeAll  |
-+--------------------------+--------------------------+
-                           |
-+--------------------------v--------------------------+
-| WorkProfileShardEngine (v0.1)                       |
-|   Wraps DevicePolicyManager + ShardAdminReceiver    |
-+-----------------------------------------------------+
-
-AppRepo:          PackageManager + LAUNCHER category scan
-AppListAdapter:   RecyclerView.Adapter rendering Row(packageName,label,icon,action)
-Shard:            data class for one cloned app
-AppInfo:          data class for one installed app
-ShardException:   recoverable engine errors
+android/
+  ├─ settings.gradle              # Module declarations + Maven repos
+  ├─ build.gradle                 # Root build, version catalog, ext{} block
+  ├─ gradle.properties            # AndroidX, R8, annotation processor flags
+  ├─ key.properties               # Signing config (gitignored)
+  ├─ local.properties             # SDK path (gitignored)
+  ├─ Bcore/                       # Vendored: virtualization engine
+  ├─ black-reflection/            # Vendored: hidden-API reflection layer
+  ├─ compiler/                    # Vendored: annotation processor used by Bcore
+  └─ app/                         # SkyShard host UI (re-branded fork)
+      ├─ build.gradle             # applicationId = com.american2day.skyshard
+      └─ src/main/
+          ├─ AndroidManifest.xml  # Theme.SkyShard, signing, queries
+          ├─ java/top/niunaijun/blackboxa/...   # Host UI (Kotlin)
+          └─ res/                 # SkyShard branded resources
 ```
 
-## State
+The `top.niunaijun.blackboxa` Java package name is preserved because users
+never see it — only `applicationId` and `app_name` matter for end-user
+identity, and both are SkyShard.
 
-There is no database and no preferences file. The "list of shards" is derived
-on demand from the OS — whichever apps SkyShard's `DeviceAdminReceiver` is
-authorized to see inside the managed profile. This is intentional: state lives
-where the truth is, and "what's cloned" cannot drift out of sync with the OS.
+## What we modified vs. inherited
 
-When the sandbox engine arrives in v1.x, *that* engine will own its own
-per-shard directory tree and a small manifest under
-`/data/data/com.american2day.skyshard/shards/`. The `ShardEngine` interface
-hides that difference from the UI.
+**Modified (host UI / branding):**
+
+- `app/build.gradle` — applicationId, output filename pattern, signing
+  config, NDK version pin.
+- `app/src/main/res/values/strings.xml` (+ `values-zh-rCN`, `values-zh-rTW`)
+  — `app_name` and any string that referenced "BlackBox" by name.
+- `app/src/main/res/values/themes.xml` — theme renamed `Theme.BlackBox`
+  → `Theme.SkyShard`.
+- `app/src/main/res/values/colors.xml` — palette replaced with the SkyShard
+  sky/teal pair.
+- `app/src/main/res/mipmap-*/ic_launcher*.png` — replaced with the
+  SkyShard mark (vector-rasterized at every density).
+- `app/src/main/AndroidManifest.xml` — `android:theme` updated to the
+  renamed theme.
+
+**Inherited verbatim (engine):**
+
+- `Bcore/` — virtualization runtime: `BlackBoxCore`, `BActivityManager`,
+  `BPackageManager`, the native `cpp/` hooks built via `Android.mk`.
+- `black-reflection/` — hidden-API reflection wrapper used by Bcore.
+- `compiler/` — annotation processor that generates the reflection stubs.
+
+## Engine entry points (the parts SkyShard's UI actually calls)
+
+- `BlackBoxCore.get()` — singleton entry point. Held by the host `App`
+  class for the lifetime of the process.
+- `BlackBoxCore.get().installPackageAsUser(apkFilePath, userId)` — adds an
+  APK to a shard space.
+- `BlackBoxCore.get().uninstallPackageAsUser(pkgName, userId)` — removes
+  a shard.
+- `BlackBoxCore.get().launchApk(pkgName, userId)` — start a shard.
+- `BlackBoxCore.get().getInstalledApps(userId)` — list shards in a given
+  user space.
+
+`userId` is the engine's per-space identifier; multiple userIds give you
+multiple copies of the same package. That's how "second Instagram" and
+"third Instagram" coexist.
 
 ## Permissions
 
 The release manifest declares:
 
-- `BIND_DEVICE_ADMIN` (held by `ShardAdminReceiver`).
+- `QUERY_ALL_PACKAGES` — needed to list apps the user might want to clone.
+- `READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE` (the latter capped at
+  API 29 by `maxSdkVersion`) — needed to ingest APKs from disk.
 
-That's it. No `INTERNET`, no `READ_EXTERNAL_STORAGE`, no `POST_NOTIFICATIONS`.
-The v0.1 binary has nothing to phone home with even if you wanted it to.
-
-## Why one big Activity instead of Fragments / Compose
-
-v0.1 is one screen. Adding Fragments or Compose for one screen would be more
-plumbing than the feature is worth. When the surface area grows (settings,
-per-shard detail, backup/restore) we'll split it.
+It does **not** declare `INTERNET`. SkyShard itself cannot phone home.
+Apps running inside a shard inherit whatever network permission they have
+in their own manifest; SkyShard does not grant them anything extra.
 
 ## Build matrix
 
-| Item              | Value                                |
-|-------------------|--------------------------------------|
-| `compileSdk`      | 35                                   |
-| `targetSdk`       | 35                                   |
-| `minSdk`          | 24                                   |
-| Language          | Java 17 source                       |
-| Gradle            | 8.9                                  |
-| AGP               | 8.7.0                                |
-| Signing           | Shared release key (sideload family) |
+| Item            | Value                                |
+|-----------------|--------------------------------------|
+| `compileSdk`    | 35                                   |
+| `targetSdk`     | 28 (intentional — see PLAN)          |
+| `minSdk`        | 21                                   |
+| Language        | Java 21 source + Kotlin 1.9.23       |
+| Gradle          | 8.13                                 |
+| AGP             | 8.13.2                               |
+| NDK             | 28.2.13676358                        |
+| ABIs            | arm64-v8a, armeabi-v7a, universal    |
+| Signing         | Shared release key (sideload family) |
 
-## Roadmap for the sandbox engine
+## Why `targetSdk=28`
 
-The sandbox engine is the interesting work. Three orderings under
-consideration:
+Android tightens what apps in a sandbox can do at every release. The
+engine's redirection layer relies on file-path interception and dynamic
+class loading that progressively get harder above API 28. Keeping the
+host targetSdk low keeps cloned apps in a more permissive runtime jail.
+Cloned apps themselves still target whatever SDK their own manifest says.
 
-1. **Fork an existing engine** (preferred): start from a current VirtualApp
-   fork that already targets Android 14, vendor it as a subproject under
-   `engine/sandbox/`, and write thin JNI glue. Fastest path; largest
-   maintenance burden because we inherit someone else's hooks.
-2. **Build from scratch using LSPlant**: write our own Binder + I/O hooks on
-   top of LSPlant's ART hooking primitives. Slowest path; cleanest result.
-3. **Hybrid**: ship a curated subset of the VirtualApp engine for the file-IO
-   and PackageManager redirection, and write our own thin process/intent
-   layer. Pragmatic; risks the worst of both maintenance burdens.
+## Upgrade path
 
-The decision blocker is whether any current VirtualApp fork passes a real
-test matrix on Android 14 and 15. That investigation precedes v1.0.
+When the upstream engine ships an Android-16 update we will:
+
+1. `git diff` the upstream tree vs. our vendored copy to confirm we have
+   no engine modifications they'd clobber (currently zero deltas).
+2. Replace `Bcore/`, `black-reflection/`, `compiler/` from upstream.
+3. Re-run the branding patch on `app/` if the upstream UI moved any
+   strings or theme names.
+4. Build, sign, deploy.
+
+That diff/replace is fast; the branding patch is the only thing that has
+to be hand-maintained.
