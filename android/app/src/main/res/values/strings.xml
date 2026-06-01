@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SkyShard</string>
+    <string name="tagline">A parallel space for your apps</string>
+    <string name="installed_apps_header">Installed apps</string>
+    <string name="shards_header">Your shards</string>
+    <string name="no_shards_yet">No shards yet. Tap an app above to add the first one.</string>
+    <string name="action_clone">Add to SkyShard</string>
+    <string name="action_launch">Launch</string>
+    <string name="action_wipe">Wipe SkyShard space</string>
+    <string name="device_admin_label">SkyShard</string>
+    <string name="device_admin_description">SkyShard uses Android\'s work profile to keep cloned apps isolated from your main profile.</string>
+    <string name="wp_unavailable">This device does not support a managed profile, or one is already configured for another app.</string>
+    <string name="wp_provisioning">Setting up SkyShard space…</string>
+    <string name="version_template">v%1$s (build %2$d)</string>
+</resources>
