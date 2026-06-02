@@ -14,6 +14,8 @@ import top.niunaijun.blackboxa.app.AppManager
 import top.niunaijun.blackboxa.bean.AppInfo
 import top.niunaijun.blackboxa.util.ContextUtil.openAppSystemSettings
 import top.niunaijun.blackboxa.view.main.ShortcutActivity
+import top.niunaijun.blackboxa.skyshard.IconTinter
+import top.niunaijun.blackboxa.skyshard.SkyShardPrefs
 
 
 object ShortcutUtil {
@@ -23,7 +25,8 @@ object ShortcutUtil {
     fun createShortcut(context: Context,userID: Int, info: AppInfo) {
 
         if (ShortcutManagerCompat.isRequestPinShortcutSupported(context)) {
-            val labelName = info.name + userID
+            val overlayLabel = SkyShardPrefs.getLabel(userID, info.packageName)
+            val labelName = overlayLabel ?: (info.name + " " + (userID + 1))
             val intent = Intent(context, ShortcutActivity::class.java)
                 .setAction(Intent.ACTION_MAIN)
                 .putExtra("pkg", info.packageName)
@@ -35,15 +38,18 @@ object ShortcutUtil {
                     prefill = labelName
                 ) { _, input ->
 
-                    val shortcutInfo: ShortcutInfoCompat =
-                        ShortcutInfoCompat.Builder(context, info.packageName + userID)
-                            .setIntent(intent)
-                            .setShortLabel(input)
-                            .setLongLabel(input)
-                            .setIcon(IconCompat.createWithBitmap(info.icon!!.toBitmap()))
-                            .build()
+                    val baseIcon = info.icon
+                    val tintedBitmap = if (baseIcon != null)
+                        IconTinter.tintForShard(baseIcon, userID, info.packageName).toBitmap()
+                    else baseIcon?.toBitmap()
 
-                    ShortcutManagerCompat.requestPinShortcut(context, shortcutInfo, null)
+                    val builder = ShortcutInfoCompat.Builder(context, info.packageName + userID)
+                        .setIntent(intent)
+                        .setShortLabel(input)
+                        .setLongLabel(input)
+                    if (tintedBitmap != null) builder.setIcon(IconCompat.createWithBitmap(tintedBitmap))
+
+                    ShortcutManagerCompat.requestPinShortcut(context, builder.build(), null)
                     showAllowPermissionDialog(context)
                 }
                 positiveButton(R.string.done)

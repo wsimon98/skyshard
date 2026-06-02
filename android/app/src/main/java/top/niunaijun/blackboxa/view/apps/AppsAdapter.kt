@@ -20,25 +20,25 @@ import androidx.recyclerview.widget.RecyclerView
 
 
 
-class AppsAdapter : RVHolderFactory() {
-    
+class AppsAdapter(private val userId: Int = 0) : RVHolderFactory() {
+
     companion object {
         private const val TAG = "AppsAdapter"
-        private const val MAX_ICON_SIZE = 96 
+        private const val MAX_ICON_SIZE = 96
         private val DEFAULT_ICON_COLOR = Color.parseColor("#CCCCCC")
     }
 
     override fun createViewHolder(parent: ViewGroup?, viewType: Int, item: Any): RVHolder<out Any> {
         return try {
-            AppsVH(inflate(R.layout.item_app, parent))
+            AppsVH(inflate(R.layout.item_app, parent), userId)
         } catch (e: Exception) {
             Log.e(TAG, "Error creating ViewHolder: ${e.message}")
-            
+
             FallbackAppsVH(inflate(R.layout.item_app, parent))
         }
     }
 
-    class AppsVH(itemView: View) : RVHolder<AppInfo>(itemView) {
+    class AppsVH(itemView: View, private val userId: Int) : RVHolder<AppInfo>(itemView) {
         val binding = ItemAppBinding.bind(itemView)
         private var currentIcon: Drawable? = null
         private var isAttached = false
@@ -64,37 +64,39 @@ class AppsAdapter : RVHolderFactory() {
 
         override fun setContent(item: AppInfo, isSelected: Boolean, payload: Any?) {
             try {
-                
-                setIconSafely(item.icon, item.packageName)
-                
-                
-                binding.name.text = item.name ?: "Unknown App"
-                
-                
+
+                setIconSafely(item.icon, item.packageName, userId)
+
+
+                val overlayLabel = top.niunaijun.blackboxa.skyshard.SkyShardPrefs.getLabel(userId, item.packageName)
+                binding.name.text = overlayLabel ?: item.name ?: "Unknown App"
+
+
                 if (item.isXpModule) {
                     binding.cornerLabel.visibility = View.VISIBLE
                 } else {
                     binding.cornerLabel.visibility = View.INVISIBLE
                 }
-                
-                
+
+
                 isAttached = true
-                
+
             } catch (e: Exception) {
                 Log.e(TAG, "Error setting content for ${item.packageName}: ${e.message}")
                 setSafeDefaults()
             }
         }
 
-        private fun setIconSafely(icon: Drawable?, packageName: String) {
+        private fun setIconSafely(icon: Drawable?, packageName: String, userId: Int) {
             try {
                 if (icon != null) {
-                    
-                    val optimizedIcon = optimizeIcon(icon)
-                    binding.icon.setImageDrawable(optimizedIcon)
-                    currentIcon = optimizedIcon
+
+                    val optimized = optimizeIcon(icon)
+                    val tinted = top.niunaijun.blackboxa.skyshard.IconTinter.tintForShard(optimized, userId, packageName)
+                    binding.icon.setImageDrawable(tinted)
+                    currentIcon = tinted
                 } else {
-                    
+
                     binding.icon.setImageDrawable(createDefaultIcon())
                     currentIcon = null
                 }

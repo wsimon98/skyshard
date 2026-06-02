@@ -67,4 +67,26 @@
     <string name="disable_gms">Disable Service</string>
     <string name="disable_gms_hint">Clear the current Google service environment? Google service data will be cleared.</string>
     <string name="no_gms">Currently, there is no Google service environment on mobile phones.</string>
+
+    <!-- SkyShard additions: per-shard label / freeze / color, backup / restore -->
+    <string name="sky_rename">Rename</string>
+    <string name="sky_rename_hint">Display name for this shard</string>
+    <string name="sky_freeze">Freeze</string>
+    <string name="sky_unfreeze">Unfreeze</string>
+    <string name="sky_frozen_badge">FROZEN</string>
+    <string name="sky_frozen_cannot_launch">This shard is frozen. Unfreeze it to launch.</string>
+    <string name="sky_color">Set color</string>
+    <string name="sky_color_clear">No color</string>
+    <string name="sky_color_blue">Sky</string>
+    <string name="sky_color_green">Mint</string>
+    <string name="sky_color_amber">Amber</string>
+    <string name="sky_color_rose">Rose</string>
+    <string name="sky_color_violet">Violet</string>
+    <string name="sky_backup">Backup shards (JSON)</string>
+    <string name="sky_restore">Restore shards (JSON)</string>
+    <string name="sky_backup_ok">Backup written.</string>
+    <string name="sky_backup_fail">Backup failed: %s</string>
+    <string name="sky_restore_ok">Restored %d shard settings.</string>
+    <string name="sky_restore_fail">Restore failed: %s</string>
+    <string name="sky_github">Project on GitHub</string>
 </resources>

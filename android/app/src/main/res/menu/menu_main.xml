@@ -14,12 +14,17 @@
         app:showAsAction="never" />
 
     <item
-            android:id="@+id/main_git"
-            android:title="@string/open_source_path"
+            android:id="@+id/sky_backup"
+            android:title="@string/sky_backup"
             app:showAsAction="never" />
 
     <item
-            android:id="@+id/main_tg"
-            android:title="@string/tg_group"
+            android:id="@+id/sky_restore"
+            android:title="@string/sky_restore"
+            app:showAsAction="never" />
+
+    <item
+            android:id="@+id/main_git"
+            android:title="@string/sky_github"
             app:showAsAction="never" />
 </menu>

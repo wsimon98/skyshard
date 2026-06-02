@@ -3,6 +3,12 @@
 
     <item android:id="@+id/app_shortcut" android:title="@string/app_shortcut"/>
 
+    <item android:id="@+id/sky_rename" android:title="@string/sky_rename"/>
+
+    <item android:id="@+id/sky_color" android:title="@string/sky_color"/>
+
+    <item android:id="@+id/sky_freeze" android:title="@string/sky_freeze"/>
+
     <item android:id="@+id/app_stop" android:title="@string/app_stop"/>
 
     <item android:id="@+id/app_clear" android:title="@string/app_clear"/>

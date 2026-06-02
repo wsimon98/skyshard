@@ -25,6 +25,8 @@ import top.niunaijun.blackboxa.view.base.LoadingActivity
 import top.niunaijun.blackboxa.view.fake.FakeManagerActivity
 import top.niunaijun.blackboxa.view.list.ListActivity
 import top.niunaijun.blackboxa.view.setting.SettingActivity
+import top.niunaijun.blackboxa.skyshard.BackupManager
+import android.widget.Toast
 
 class MainActivity : LoadingActivity() {
 
@@ -35,6 +37,29 @@ class MainActivity : LoadingActivity() {
     private val fragmentList = mutableListOf<AppsFragment>()
 
     private var currentUser = 0
+
+    private val backupLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        result.data?.data?.let { uri ->
+            BackupManager.export(this, uri)
+                .onSuccess { Toast.makeText(this, R.string.sky_backup_ok, Toast.LENGTH_SHORT).show() }
+                .onFailure { Toast.makeText(this, getString(R.string.sky_backup_fail, it.message ?: ""), Toast.LENGTH_LONG).show() }
+        }
+    }
+
+    private val restoreLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        result.data?.data?.let { uri ->
+            BackupManager.import(this, uri)
+                .onSuccess { count ->
+                    Toast.makeText(this, getString(R.string.sky_restore_ok, count), Toast.LENGTH_SHORT).show()
+                    fragmentList.forEach { it.notifyDataChanged() }
+                }
+                .onFailure { Toast.makeText(this, getString(R.string.sky_restore_fail, it.message ?: ""), Toast.LENGTH_LONG).show() }
+        }
+    }
 
     companion object {
         private const val TAG = "MainActivity"
@@ -406,19 +431,30 @@ class MainActivity : LoadingActivity() {
                     val intent =
                             Intent(
                                     Intent.ACTION_VIEW,
-                                    Uri.parse("https://github.com/ALEX5402/NewBlackbox")
+                                    Uri.parse("https://github.com/wsimon98/skyshard")
                             )
                     startActivity(intent)
                 }
                 R.id.main_setting -> {
                     SettingActivity.start(this)
                 }
-                R.id.main_tg -> {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/newblackboxa"))
-                    startActivity(intent)
+                R.id.sky_backup -> {
+                    val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "application/json"
+                        putExtra(Intent.EXTRA_TITLE, "skyshard-backup.json")
+                    }
+                    backupLauncher.launch(intent)
+                }
+                R.id.sky_restore -> {
+                    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "application/json"
+                    }
+                    restoreLauncher.launch(intent)
                 }
                 R.id.fake_location -> {
-                    
+
                     val intent = Intent(this, FakeManagerActivity::class.java)
                     intent.putExtra("userID", 0)
                     startActivity(intent)

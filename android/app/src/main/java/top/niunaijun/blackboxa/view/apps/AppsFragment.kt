@@ -28,6 +28,10 @@ import top.niunaijun.blackboxa.util.MemoryManager
 import top.niunaijun.blackboxa.util.toast
 import top.niunaijun.blackboxa.view.base.LoadingActivity
 import top.niunaijun.blackboxa.view.main.MainActivity
+import top.niunaijun.blackboxa.skyshard.SkyShardPrefs
+import com.afollestad.materialdialogs.input.input
+import com.afollestad.materialdialogs.list.listItems
+import android.graphics.Color
 import java.util.*
 import kotlin.math.abs
 
@@ -76,7 +80,7 @@ class AppsFragment : Fragment() {
             viewBinding.stateView.showEmpty()
 
             mAdapter =
-                RVAdapter<AppInfo>(requireContext(), AppsAdapter()).bind(viewBinding.recyclerView)
+                RVAdapter<AppInfo>(requireContext(), AppsAdapter(userID)).bind(viewBinding.recyclerView)
 
             viewBinding.recyclerView.adapter = mAdapter
             
@@ -147,6 +151,10 @@ class AppsFragment : Fragment() {
 
             mAdapter.setItemClickListener { _, data, _ ->
                 try {
+                    if (SkyShardPrefs.isFrozen(userID, data.packageName)) {
+                        toast(R.string.sky_frozen_cannot_launch)
+                        return@setItemClickListener
+                    }
                     showLoading()
                     viewModel.launchApk(data.packageName, userID)
                 } catch (e: Exception) {
@@ -337,6 +345,11 @@ class AppsFragment : Fragment() {
                 try {
                     popupMenu = PopupMenu(requireContext(),view).also {
                         it.inflate(R.menu.app_menu)
+                        // Adjust freeze label dynamically
+                        it.menu.findItem(R.id.sky_freeze)?.setTitle(
+                            if (SkyShardPrefs.isFrozen(userID, data.packageName))
+                                R.string.sky_unfreeze else R.string.sky_freeze
+                        )
                         it.setOnMenuItemClickListener { item ->
                             try {
                                 when (item.itemId) {
@@ -358,6 +371,18 @@ class AppsFragment : Fragment() {
 
                                     R.id.app_shortcut -> {
                                         ShortcutUtil.createShortcut(requireContext(), userID, data)
+                                    }
+
+                                    R.id.sky_rename -> {
+                                        showRenameDialog(data)
+                                    }
+
+                                    R.id.sky_freeze -> {
+                                        toggleFreeze(data)
+                                    }
+
+                                    R.id.sky_color -> {
+                                        showColorPicker(data)
                                     }
                                 }
                                 return@setOnMenuItemClickListener true
@@ -525,6 +550,76 @@ class AppsFragment : Fragment() {
             (requireActivity() as? MainActivity)?.scanUser()
         } catch (e: Exception) {
             Log.e(TAG, "Error scanning user: ${e.message}")
+        }
+    }
+
+    // ----- SkyShard: rename / freeze / color -----
+
+    private fun showRenameDialog(info: AppInfo) {
+        try {
+            val current = SkyShardPrefs.getLabel(userID, info.packageName) ?: info.name
+            MaterialDialog(requireContext()).show {
+                title(R.string.sky_rename)
+                input(
+                    hintRes = R.string.sky_rename_hint,
+                    prefill = current,
+                    allowEmpty = true,
+                ) { _, text ->
+                    SkyShardPrefs.setLabel(userID, info.packageName, text.toString())
+                    notifyDataChanged()
+                }
+                positiveButton(R.string.done)
+                negativeButton(R.string.cancel)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error showing rename dialog: ${e.message}")
+        }
+    }
+
+    private fun toggleFreeze(info: AppInfo) {
+        try {
+            val nextFrozen = !SkyShardPrefs.isFrozen(userID, info.packageName)
+            SkyShardPrefs.setFrozen(userID, info.packageName, nextFrozen)
+            if (nextFrozen) {
+                BlackBoxCore.get().stopPackage(info.packageName, userID)
+            }
+            notifyDataChanged()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error toggling freeze: ${e.message}")
+        }
+    }
+
+    private fun showColorPicker(info: AppInfo) {
+        try {
+            val options = listOf(
+                getString(R.string.sky_color_clear) to 0,
+                getString(R.string.sky_color_blue) to Color.parseColor("#4DB8FF"),
+                getString(R.string.sky_color_green) to Color.parseColor("#7AE0A1"),
+                getString(R.string.sky_color_amber) to Color.parseColor("#F5B14D"),
+                getString(R.string.sky_color_rose) to Color.parseColor("#F47A9A"),
+                getString(R.string.sky_color_violet) to Color.parseColor("#B086FF"),
+            )
+            MaterialDialog(requireContext()).show {
+                title(R.string.sky_color)
+                listItems(items = options.map { it.first }) { _, index, _ ->
+                    SkyShardPrefs.setColor(userID, info.packageName, options[index].second)
+                    notifyDataChanged()
+                }
+                negativeButton(R.string.cancel)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error showing color picker: ${e.message}")
+        }
+    }
+
+    /** Refresh visuals after an overlay change. Public so MainActivity can call it after a restore. */
+    fun notifyDataChanged() {
+        try {
+            if (this::mAdapter.isInitialized) {
+                mAdapter.notifyDataSetChanged()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error notifying data change: ${e.message}")
         }
     }
 
